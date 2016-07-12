@@ -524,6 +524,91 @@ class PHP_CodeSniffer_File
                 $foundCode = true;
             }
 
+            $preListeners = array();
+            foreach ($this->_listeners as $tokenCode => $listener) {
+                foreach($listener as $class => $data) {
+                    if (is_subclass_of($class, 'PHP_CodeSniffer_PreSniff')) {
+                        $preListeners[$tokenCode][$class] = $data;
+                        unset($this->_listeners[$tokenCode][$class]);
+                    }
+                }
+            }
+
+            if (is_subclass_of($class, 'PHP_CodeSniffer_PreSniff')) {
+                    $preListerners[$tokenCode][$class] = $listener;
+            }else{
+
+            }
+
+            if (isset($preListeners[$token['code']]) !== false) {
+                foreach ($preListeners[$token['code']] as $listenerData) {
+                    if (isset($this->_ignoredListeners[$listenerData['class']]) === true
+                        || (isset($listenerIgnoreTo[$listenerData['class']]) === true
+                        && $listenerIgnoreTo[$listenerData['class']] > $stackPtr)
+                    ) {
+                        // This sniff is ignoring past this token, or the whole file.
+                        continue;
+                    }
+
+                    // Make sure this sniff supports the tokenizer
+                    // we are currently using.
+                    $class = $listenerData['class'];
+
+                    if (isset($listenerData['tokenizers'][$this->tokenizerType]) === false) {
+                        continue;
+                    }
+
+                    // If the file path matches one of our ignore patterns, skip it.
+                    // While there is support for a type of each pattern
+                    // (absolute or relative) we don't actually support it here.
+                    foreach ($listenerData['ignore'] as $pattern) {
+                        // We assume a / directory separator, as do the exclude rules
+                        // most developers write, so we need a special case for any system
+                        // that is different.
+                        if (DIRECTORY_SEPARATOR === '\\') {
+                            $pattern = str_replace('/', '\\\\', $pattern);
+                        }
+
+                        $pattern = '`'.$pattern.'`i';
+                        if (preg_match($pattern, $this->_file) === 1) {
+                            $this->_ignoredListeners[$class] = true;
+                            continue(2);
+                        }
+                    }
+
+                    $this->_activeListener = $class;
+
+                    if (PHP_CODESNIFFER_VERBOSITY > 2) {
+                        $startTime = microtime(true);
+                        echo "\t\t\tProcessing ".$this->_activeListener.'... ';
+                    }
+
+                    $ignoreTo = $listeners[$class]->process($this, $stackPtr);
+                    if ($ignoreTo !== null) {
+                        if (PHP_CODESNIFFER_VERBOSITY > 2) {
+                            echo "\t\t\tPreCheck failed for ".$this->_activeListener."...";
+                        }
+                        $listenerIgnoreTo[$this->_activeListener] = $ignoreTo;
+                        return;
+                    }
+
+                    if (PHP_CODESNIFFER_VERBOSITY > 2) {
+                        $timeTaken = (microtime(true) - $startTime);
+                        if (isset($this->_listenerTimes[$this->_activeListener]) === false) {
+                            $this->_listenerTimes[$this->_activeListener] = 0;
+                        }
+
+                        $this->_listenerTimes[$this->_activeListener] += $timeTaken;
+
+                        $timeTaken = round(($timeTaken), 4);
+                        echo "DONE in $timeTaken seconds".PHP_EOL;
+                    }
+
+                    $this->_activeListener = '';
+                }
+            }
+
+
             if (isset($this->_listeners[$token['code']]) === false) {
                 continue;
             }
